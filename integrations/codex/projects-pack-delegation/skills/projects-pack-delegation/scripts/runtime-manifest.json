@@ -1,0 +1,104 @@
+{
+  "schemaVersion": 1,
+  "kind": "projects-pr-public-runtime-manifest",
+  "entrypoint": "scripts/projects-pr.mjs",
+  "files": [
+    {
+      "path": "scripts/projects-pr.mjs",
+      "sha256": "cf40e3edce39a0ef32142fa4ae4e369b145274059d9639ab65d45cd019a3ae51",
+      "bytes": 5202,
+      "identity": "projects-pr-cli"
+    },
+    {
+      "path": "scripts/lib/action-authority.mjs",
+      "sha256": "48c320a3e9fe0294c2b8f8e2759e75e287810ebeee36d9471b5e84da3b073ccf",
+      "bytes": 1469,
+      "identity": "local-command-action-authority"
+    },
+    {
+      "path": "scripts/lib/bounded-process.mjs",
+      "sha256": "3c0618eb27b7e86e234f2bc7bd1b2d214e08f5a386cc5aa5a49787afa63a253a",
+      "bytes": 6727,
+      "identity": "bounded-process"
+    },
+    {
+      "path": "scripts/lib/host-actions.mjs",
+      "sha256": "623f228a148ea7bdc744e4f154e2d55bca22e2d70cc417da1f37ec6b6c997902",
+      "bytes": 31186,
+      "identity": "closed-host-actions"
+    },
+    {
+      "path": "scripts/lib/journal.mjs",
+      "sha256": "90c30ea4a4eb0861ba055d61da94309d860bd5d3ac8eb5bd7a5a1695e321a138",
+      "bytes": 6767,
+      "identity": "durable-local-journal"
+    },
+    {
+      "path": "scripts/lib/projects-pr.mjs",
+      "sha256": "ad08424166bbefd68fbe9edf14f9dd734aa719884c327ef70dcaf3e534ace082",
+      "bytes": 20416,
+      "identity": "local-runner"
+    },
+    {
+      "path": "scripts/lib/protocol.mjs",
+      "sha256": "d16dc172f81148f1451c13ba4d1d718586bec2b08d1896a7958b9f6879dbc467",
+      "bytes": 18240,
+      "identity": "wire-validator"
+    },
+    {
+      "path": "scripts/lib/repository-lock.mjs",
+      "sha256": "f19f873dfc8fe39d9d1bf939275bd8a5f014ce45fcc426d933eb867d66b94966",
+      "bytes": 6689,
+      "identity": "repository-lock"
+    },
+    {
+      "path": "scripts/lib/transport.mjs",
+      "sha256": "00752a6f80fd67ed53f165b7e24dd31765fb1105b77d67bfddffbca38a0e10ae",
+      "bytes": 6124,
+      "identity": "authenticated-mcp-transport"
+    },
+    {
+      "path": "scripts/protocol/projects-pr-machine.schema.json",
+      "sha256": "11099c77af68e28def6203586b8a54328550926c0d1c667a24114fe9602648dd",
+      "bytes": 20492,
+      "identity": "frozen-wire-schema"
+    },
+    {
+      "path": "scripts/protocol/projects-pr-machine.fixtures.json",
+      "sha256": "fe27a1639d2ed086a8fa2298570c9e79051f772b16c5aef25ce7c6ca0ab539a3",
+      "bytes": 10266,
+      "identity": "frozen-wire-fixtures"
+    }
+  ],
+  "dependencies": {
+    "scripts/projects-pr.mjs": [
+      "scripts/lib/projects-pr.mjs"
+    ],
+    "scripts/lib/projects-pr.mjs": [
+      "scripts/lib/action-authority.mjs",
+      "scripts/lib/bounded-process.mjs",
+      "scripts/lib/host-actions.mjs",
+      "scripts/lib/journal.mjs",
+      "scripts/lib/protocol.mjs",
+      "scripts/lib/repository-lock.mjs",
+      "scripts/lib/transport.mjs"
+    ],
+    "scripts/lib/action-authority.mjs": [],
+    "scripts/lib/host-actions.mjs": [
+      "scripts/lib/action-authority.mjs",
+      "scripts/lib/protocol.mjs"
+    ],
+    "scripts/lib/transport.mjs": [
+      "scripts/lib/protocol.mjs"
+    ],
+    "scripts/lib/bounded-process.mjs": [],
+    "scripts/lib/journal.mjs": [],
+    "scripts/lib/protocol.mjs": [
+      "scripts/protocol/projects-pr-machine.schema.json",
+      "scripts/protocol/projects-pr-machine.fixtures.json"
+    ],
+    "scripts/lib/repository-lock.mjs": [],
+    "scripts/protocol/projects-pr-machine.schema.json": [],
+    "scripts/protocol/projects-pr-machine.fixtures.json": []
+  }
+}

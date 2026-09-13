@@ -1,0 +1,266 @@
+{
+  "schemaVersion": 1,
+  "valid": [
+    {
+      "schemaVersion": 1,
+      "operationId": "doctor:workspace-1:repo-1",
+      "operation": "doctor",
+      "request": {
+        "repository": "example/projects",
+        "baseBranch": "main",
+        "remote": "origin",
+        "stack": false
+      }
+    },
+    {
+      "schemaVersion": 1,
+      "operationId": "prepare:task-child:1",
+      "operation": "prepare",
+      "packId": "task-child",
+      "request": {
+        "title": "Repair authentication",
+        "baseBranch": "main",
+        "remote": "origin",
+        "verificationCommandSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      }
+    },
+    {
+      "schemaVersion": 1,
+      "operationId": "publish:task-child:1",
+      "operation": "publish",
+      "packId": "task-child",
+      "request": {
+        "headSha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "handoffSha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+      }
+    },
+    {
+      "schemaVersion": 1,
+      "operationId": "finalize:task-child:1",
+      "operation": "finalize",
+      "packId": "task-child",
+      "request": {}
+    },
+    {
+      "schemaVersion": 1,
+      "operationId": "finalize:task-child:2",
+      "operation": "finalize",
+      "packId": "task-child",
+      "request": {
+        "githubEvidence": {
+          "pullRequest": 17,
+          "runId": 101,
+          "runAttempt": 1,
+          "artifactId": 202,
+          "reviewId": 303
+        }
+      }
+    },
+    {
+      "schemaVersion": 1,
+      "operationId": "status:task-child:1",
+      "operation": "status",
+      "packId": "task-child",
+      "request": {},
+      "report": {
+        "actionId": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+        "status": "uncertain",
+        "error": { "code": "response_dropped" }
+      }
+    },
+    {
+      "schemaVersion": 1,
+      "operationId": "abort:task-child:1",
+      "operation": "abort",
+      "packId": "task-child",
+      "request": {}
+    },
+    {
+      "schemaVersion": 1,
+      "operationId": "stack:task-bottom:task-top:1",
+      "operation": "stack",
+      "packIds": ["task-bottom", "task-top"],
+      "request": { "baseBranch": "main", "remote": "origin" }
+    },
+    {
+      "schemaVersion": 1,
+      "operationId": "prepare:task-child:1",
+      "operation": "prepare",
+      "status": "needs_action",
+      "binding": {
+        "workspaceId": "workspace-1",
+        "packId": "task-child",
+        "attempt": 1,
+        "revision": 1,
+        "repository": "example/projects",
+        "base": "1111111111111111111111111111111111111111",
+        "head": "1111111111111111111111111111111111111111",
+        "verificationCommandSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "action": {
+        "actionId": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+        "kind": "create_worktree",
+        "params": {
+          "repository": "example/projects",
+          "baseBranch": "main",
+          "remote": "origin",
+          "branch": "projects-pr/task-child-repair-authentication",
+          "worktreeName": "task-child-repair-authentication",
+          "headSha": "1111111111111111111111111111111111111111",
+          "baseSha": "1111111111111111111111111111111111111111",
+          "verificationCommandSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      }
+    },
+    {
+      "schemaVersion": 1,
+      "operationId": "prepare:task-child:1",
+      "operation": "prepare",
+      "status": "needs_action",
+      "binding": {
+        "workspaceId": "workspace-1",
+        "packId": "task-child",
+        "attempt": 1,
+        "revision": 1,
+        "repository": "example/projects",
+        "base": "1111111111111111111111111111111111111111",
+        "head": "1111111111111111111111111111111111111111",
+        "verificationCommandSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "action": {
+        "actionId": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+        "kind": "observe_repository",
+        "params": {
+          "repository": "example/projects",
+          "baseBranch": "main",
+          "remote": "origin",
+          "baseSha": "1111111111111111111111111111111111111111",
+          "branch": "projects-pr/task-child-repair-authentication",
+          "headSha": "1111111111111111111111111111111111111111",
+          "worktreeName": "task-child-repair-authentication"
+        }
+      }
+    },
+    {
+      "schemaVersion": 1,
+      "operationId": "publish:task-child:1",
+      "operation": "publish",
+      "status": "needs_action",
+      "binding": {
+        "workspaceId": "workspace-1",
+        "packId": "task-child",
+        "attempt": 1,
+        "revision": 1,
+        "repository": "example/projects",
+        "base": "1111111111111111111111111111111111111111",
+        "head": "1111111111111111111111111111111111111111",
+        "verificationCommandSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "action": {
+        "actionId": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+        "kind": "create_pull_request",
+        "params": {
+          "repository": "example/projects",
+          "baseBranch": "main",
+          "branch": "projects-pr/task-child-repair-authentication",
+          "headSha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "title": "Repair authentication",
+          "draft": true,
+          "bindingSha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "providerBindingSha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+          "verificationCommandSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      }
+    },
+    {
+      "schemaVersion": 1,
+      "operationId": "publish:task-child:1",
+      "operation": "publish",
+      "status": "candidate_published",
+      "binding": {
+        "workspaceId": "workspace-1",
+        "packId": "task-child",
+        "attempt": 1,
+        "revision": 1,
+        "repository": "example/projects",
+        "base": "1111111111111111111111111111111111111111",
+        "head": "1111111111111111111111111111111111111111",
+        "verificationCommandSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "receipt": {
+        "phase": "candidate_published",
+        "summary": "The exact reported candidate is published as an unreviewed draft.",
+        "candidatePullRequest": {
+          "number": 17,
+          "url": "https://github.com/example/projects/pull/17",
+          "state": "open",
+          "draft": true,
+          "baseRef": "main",
+          "baseSha": "1111111111111111111111111111111111111111",
+          "headRef": "projects-pr/task-child-repair-authentication",
+          "headSha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "baseRepository": "example/projects",
+          "headRepository": "example/projects"
+        },
+        "acceptance": { "status": "not_requested", "auditEventId": null },
+        "cleanup": { "worktreeRemoved": false, "localBranchPreserved": true }
+      }
+    },
+    {
+      "schemaVersion": 1,
+      "operationId": "finalize:task-child:1",
+      "operation": "finalize",
+      "status": "awaiting_owner_readiness",
+      "binding": {
+        "workspaceId": "workspace-1",
+        "packId": "task-child",
+        "attempt": 1,
+        "revision": 1,
+        "repository": "example/projects",
+        "base": "1111111111111111111111111111111111111111",
+        "head": "1111111111111111111111111111111111111111",
+        "verificationCommandSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "receipt": {
+        "phase": "awaiting_owner_readiness",
+        "summary": "The candidate is still draft. The owner must mark this exact head ready in GitHub before acceptance.",
+        "candidatePullRequest": {
+          "number": 17,
+          "url": "https://github.com/example/projects/pull/17",
+          "state": "open",
+          "draft": true,
+          "baseRef": "main",
+          "baseSha": "1111111111111111111111111111111111111111",
+          "headRef": "projects-pr/task-child-repair-authentication",
+          "headSha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "baseRepository": "example/projects",
+          "headRepository": "example/projects"
+        },
+        "acceptance": { "status": "awaiting_owner_readiness", "auditEventId": null },
+        "cleanup": { "worktreeRemoved": false, "localBranchPreserved": true }
+      }
+    }
+  ],
+  "invalid": [
+    {
+      "reason": "unknown operation",
+      "value": { "schemaVersion": 1, "operationId": "bad:1", "operation": "execute", "request": {} }
+    },
+    {
+      "reason": "raw shell commands are outside the protocol",
+      "value": { "schemaVersion": 1, "operationId": "prepare:bad", "operation": "prepare", "packId": "task-child", "request": { "title": "Bad", "baseBranch": "main", "remote": "origin", "verificationCommandSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "command": "rm -rf /" } }
+    },
+    {
+      "reason": "absolute local paths are outside the protocol",
+      "value": { "schemaVersion": 1, "operationId": "status:bad", "operation": "status", "packId": "task-child", "request": { "repositoryRoot": "C:/secret/repo" } }
+    },
+    {
+      "reason": "credentials are outside the protocol",
+      "value": { "schemaVersion": 1, "operationId": "doctor:bad", "operation": "doctor", "request": { "repository": "example/projects", "baseBranch": "main", "remote": "origin", "stack": false, "token": "secret" } }
+    },
+    {
+      "reason": "changed report fields are rejected",
+      "value": { "schemaVersion": 1, "operationId": "status:bad", "operation": "status", "packId": "task-child", "request": {}, "report": { "actionId": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd", "status": "succeeded", "result": { "kind": "cleanup", "worktreeRemoved": true, "localBranchPresent": true, "headSha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "stdout": "hidden" } } }
+    }
+  ]
+}

@@ -1,0 +1,518 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://projectsdemo.org/protocol/projects-pr-machine/v1",
+  "title": "Projects PR Machine wire protocol v1",
+  "description": "Bounded observations and closed mechanical actions exchanged between the private Projects decision service and a local runner.",
+  "$defs": {
+    "operationId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 160,
+      "pattern": "^[A-Za-z0-9._:+/-]+$"
+    },
+    "packId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 120,
+      "pattern": "^[A-Za-z0-9._:-]+$"
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "commit": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{40}$"
+    },
+    "branch": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 240,
+      "pattern": "^(?!-)(?!.*(?:\\.\\.|//|@\\{|[~^:?*\\[\\]\\\\]))[^\\s]+$"
+    },
+    "remote": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 80,
+      "pattern": "^[A-Za-z0-9._-]+$"
+    },
+    "repository": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$",
+      "maxLength": 200
+    },
+    "githubEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["pullRequest", "runId", "runAttempt", "artifactId", "reviewId"],
+      "properties": {
+        "pullRequest": { "type": "integer", "minimum": 1 },
+        "runId": { "type": "integer", "minimum": 1 },
+        "runAttempt": { "type": "integer", "minimum": 1 },
+        "artifactId": { "type": "integer", "minimum": 1 },
+        "reviewId": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "pullRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["number", "url", "state", "draft", "baseRef", "baseSha", "headRef", "headSha", "baseRepository", "headRepository"],
+      "properties": {
+        "number": { "type": "integer", "minimum": 1 },
+        "url": { "type": "string", "format": "uri", "maxLength": 2048 },
+        "state": { "enum": ["open", "closed", "merged"] },
+        "draft": { "type": "boolean" },
+        "baseRef": { "$ref": "#/$defs/branch" },
+        "baseSha": { "$ref": "#/$defs/commit" },
+        "headRef": { "$ref": "#/$defs/branch" },
+        "headSha": { "$ref": "#/$defs/commit" },
+        "baseRepository": { "$ref": "#/$defs/repository" },
+        "headRepository": { "$ref": "#/$defs/repository" }
+      }
+    },
+    "reportError": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code"],
+      "properties": {
+        "code": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120,
+          "pattern": "^[a-z0-9_]+$"
+        }
+      }
+    },
+    "actionResult": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "platform", "nodeVersion", "gitVersion", "shell", "github", "stack"],
+          "properties": {
+            "kind": { "const": "host" },
+            "platform": { "enum": ["win32", "linux", "darwin"] },
+            "nodeVersion": { "type": "string", "minLength": 1, "maxLength": 40 },
+            "gitVersion": { "type": "string", "minLength": 1, "maxLength": 80 },
+            "shell": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["kind", "available", "version"],
+              "properties": {
+                "kind": { "enum": ["pwsh", "sh"] },
+                "available": { "type": "boolean" },
+                "version": { "type": ["string", "null"], "maxLength": 80 }
+              }
+            },
+            "github": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["version", "authenticated", "repository", "pushPermission"],
+              "properties": {
+                "version": { "type": ["string", "null"], "maxLength": 80 },
+                "authenticated": { "type": "boolean" },
+                "repository": { "anyOf": [{ "$ref": "#/$defs/repository" }, { "type": "null" }] },
+                "pushPermission": { "type": "boolean" }
+              }
+            },
+            "stack": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["extensionCount", "publisher", "commandAvailable"],
+              "properties": {
+                "extensionCount": { "type": "integer", "minimum": 0, "maximum": 32 },
+                "publisher": { "type": ["string", "null"], "maxLength": 120 },
+                "commandAvailable": { "type": "boolean" }
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "repositoryRootSha256", "clean", "currentBranch", "headSha", "baseRef", "localBaseSha", "remoteBaseSha", "repository", "remote", "pushUrlCount", "pushUrlRepository", "gitConfigSha256", "worktree", "localBranch", "remoteBranch", "pullRequests"],
+          "properties": {
+            "kind": { "const": "repository" },
+            "repositoryRootSha256": { "$ref": "#/$defs/sha256" },
+            "clean": { "type": "boolean" },
+            "currentBranch": { "$ref": "#/$defs/branch" },
+            "headSha": { "$ref": "#/$defs/commit" },
+            "baseRef": { "$ref": "#/$defs/branch" },
+            "localBaseSha": { "$ref": "#/$defs/commit" },
+            "remoteBaseSha": { "$ref": "#/$defs/commit" },
+            "repository": { "$ref": "#/$defs/repository" },
+            "remote": { "$ref": "#/$defs/remote" },
+            "pushUrlCount": { "type": "integer", "minimum": 0, "maximum": 8 },
+            "pushUrlRepository": { "anyOf": [{ "$ref": "#/$defs/repository" }, { "type": "null" }] },
+            "gitConfigSha256": { "$ref": "#/$defs/sha256" },
+            "worktree": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["registered", "exists", "clean", "headSha"],
+              "properties": {
+                "registered": { "type": "boolean" },
+                "exists": { "type": "boolean" },
+                "clean": { "type": ["boolean", "null"] },
+                "headSha": { "anyOf": [{ "$ref": "#/$defs/commit" }, { "type": "null" }] }
+              }
+            },
+            "localBranch": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["exists", "sha"],
+              "properties": {
+                "exists": { "type": "boolean" },
+                "sha": { "anyOf": [{ "$ref": "#/$defs/commit" }, { "type": "null" }] }
+              }
+            },
+            "remoteBranch": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["reachable", "exists", "sha"],
+              "properties": {
+                "reachable": { "type": "boolean" },
+                "exists": { "type": "boolean" },
+                "sha": { "anyOf": [{ "$ref": "#/$defs/commit" }, { "type": "null" }] }
+              }
+            },
+            "pullRequests": {
+              "type": "array",
+              "maxItems": 2,
+              "items": { "$ref": "#/$defs/pullRequest" }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "repositoryRootSha256", "branch", "headSha", "clean", "registered"],
+          "properties": {
+            "kind": { "const": "worktree" },
+            "repositoryRootSha256": { "$ref": "#/$defs/sha256" },
+            "branch": { "$ref": "#/$defs/branch" },
+            "headSha": { "$ref": "#/$defs/commit" },
+            "clean": { "type": "boolean" },
+            "registered": { "type": "boolean" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "branch", "headSha", "remoteSha"],
+          "properties": {
+            "kind": { "const": "push" },
+            "branch": { "$ref": "#/$defs/branch" },
+            "headSha": { "$ref": "#/$defs/commit" },
+            "remoteSha": { "$ref": "#/$defs/commit" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "pullRequest"],
+          "properties": {
+            "kind": { "const": "pull_request" },
+            "pullRequest": { "$ref": "#/$defs/pullRequest" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "worktreeRemoved", "localBranchPresent", "headSha"],
+          "properties": {
+            "kind": { "const": "cleanup" },
+            "worktreeRemoved": { "type": "boolean" },
+            "localBranchPresent": { "type": "boolean" },
+            "headSha": { "$ref": "#/$defs/commit" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "pullRequests"],
+          "properties": {
+            "kind": { "const": "stack" },
+            "pullRequests": {
+              "type": "array",
+              "minItems": 2,
+              "maxItems": 8,
+              "items": { "$ref": "#/$defs/pullRequest" }
+            }
+          }
+        }
+      ]
+    },
+    "report": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["actionId", "status", "result"],
+          "properties": {
+            "actionId": { "$ref": "#/$defs/sha256" },
+            "status": { "const": "succeeded" },
+            "result": { "$ref": "#/$defs/actionResult" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["actionId", "status", "error"],
+          "properties": {
+            "actionId": { "$ref": "#/$defs/sha256" },
+            "status": { "enum": ["failed", "uncertain"] },
+            "error": { "$ref": "#/$defs/reportError" }
+          }
+        }
+      ]
+    },
+    "commonRequest": {
+      "type": "object",
+      "properties": {
+        "schemaVersion": { "const": 1 },
+        "operationId": { "$ref": "#/$defs/operationId" },
+        "operation": { "enum": ["doctor", "prepare", "publish", "finalize", "status", "abort", "stack"] },
+        "packId": { "$ref": "#/$defs/packId" },
+        "packIds": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 8,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/packId" }
+        },
+        "request": { "type": "object" },
+        "report": { "$ref": "#/$defs/report" }
+      }
+    },
+    "request": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["schemaVersion", "operationId", "operation", "request"],
+          "properties": {
+            "schemaVersion": { "const": 1 },
+            "operationId": { "$ref": "#/$defs/operationId" },
+            "operation": { "const": "doctor" },
+            "request": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["repository", "baseBranch", "remote", "stack"],
+              "properties": {
+                "repository": { "$ref": "#/$defs/repository" },
+                "baseBranch": { "$ref": "#/$defs/branch" },
+                "remote": { "$ref": "#/$defs/remote" },
+                "stack": { "type": "boolean" }
+              }
+            },
+            "report": { "$ref": "#/$defs/report" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["schemaVersion", "operationId", "operation", "packId", "request"],
+          "properties": {
+            "schemaVersion": { "const": 1 },
+            "operationId": { "$ref": "#/$defs/operationId" },
+            "operation": { "const": "prepare" },
+            "packId": { "$ref": "#/$defs/packId" },
+            "request": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["title", "baseBranch", "remote", "verificationCommandSha256"],
+              "properties": {
+                "title": { "type": "string", "minLength": 1, "maxLength": 200 },
+                "baseBranch": { "$ref": "#/$defs/branch" },
+                "remote": { "$ref": "#/$defs/remote" },
+                "verificationCommandSha256": { "$ref": "#/$defs/sha256" }
+              }
+            },
+            "report": { "$ref": "#/$defs/report" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["schemaVersion", "operationId", "operation", "packId", "request"],
+          "properties": {
+            "schemaVersion": { "const": 1 },
+            "operationId": { "$ref": "#/$defs/operationId" },
+            "operation": { "const": "publish" },
+            "packId": { "$ref": "#/$defs/packId" },
+            "request": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["headSha", "handoffSha256"],
+              "properties": {
+                "headSha": { "$ref": "#/$defs/commit" },
+                "handoffSha256": { "$ref": "#/$defs/sha256" }
+              }
+            },
+            "report": { "$ref": "#/$defs/report" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["schemaVersion", "operationId", "operation", "packId", "request"],
+          "properties": {
+            "schemaVersion": { "const": 1 },
+            "operationId": { "$ref": "#/$defs/operationId" },
+            "operation": { "const": "finalize" },
+            "packId": { "$ref": "#/$defs/packId" },
+            "request": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "githubEvidence": { "$ref": "#/$defs/githubEvidence" }
+              }
+            },
+            "report": { "$ref": "#/$defs/report" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["schemaVersion", "operationId", "operation", "packId", "request"],
+          "properties": {
+            "schemaVersion": { "const": 1 },
+            "operationId": { "$ref": "#/$defs/operationId" },
+            "operation": { "enum": ["status", "abort"] },
+            "packId": { "$ref": "#/$defs/packId" },
+            "request": { "type": "object", "additionalProperties": false },
+            "report": { "$ref": "#/$defs/report" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["schemaVersion", "operationId", "operation", "packIds", "request"],
+          "properties": {
+            "schemaVersion": { "const": 1 },
+            "operationId": { "$ref": "#/$defs/operationId" },
+            "operation": { "const": "stack" },
+            "packIds": {
+              "type": "array",
+              "minItems": 2,
+              "maxItems": 8,
+              "uniqueItems": true,
+              "items": { "$ref": "#/$defs/packId" }
+            },
+            "request": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["baseBranch", "remote"],
+              "properties": {
+                "baseBranch": { "$ref": "#/$defs/branch" },
+                "remote": { "$ref": "#/$defs/remote" }
+              }
+            },
+            "report": { "$ref": "#/$defs/report" }
+          }
+        }
+      ]
+    },
+    "binding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["workspaceId", "packId", "attempt", "revision", "repository", "base", "head", "verificationCommandSha256"],
+      "properties": {
+        "workspaceId": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "packId": { "$ref": "#/$defs/packId" },
+        "attempt": { "type": "integer", "minimum": 1, "maximum": 100 },
+        "revision": { "type": "integer", "minimum": 1, "maximum": 100 },
+        "repository": { "$ref": "#/$defs/repository" },
+        "base": { "$ref": "#/$defs/commit" },
+        "head": { "$ref": "#/$defs/commit" },
+        "verificationCommandSha256": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "action": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["actionId", "kind", "params"],
+      "properties": {
+        "actionId": { "$ref": "#/$defs/sha256" },
+        "kind": {
+          "enum": ["observe_host", "observe_repository", "create_worktree", "observe_candidate", "push_branch", "create_pull_request", "observe_pull_request", "remove_worktree", "remove_local_branch", "link_stack", "observe_stack"]
+        },
+        "params": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "repository": { "$ref": "#/$defs/repository" },
+            "baseBranch": { "$ref": "#/$defs/branch" },
+            "remote": { "$ref": "#/$defs/remote" },
+            "branch": { "$ref": "#/$defs/branch" },
+            "worktreeName": { "type": "string", "minLength": 1, "maxLength": 180, "pattern": "^[A-Za-z0-9._-]+$" },
+            "headSha": { "$ref": "#/$defs/commit" },
+            "baseSha": { "$ref": "#/$defs/commit" },
+            "title": { "type": "string", "minLength": 1, "maxLength": 200 },
+            "draft": { "const": true },
+            "pullRequest": { "type": "integer", "minimum": 1 },
+            "pullRequests": { "type": "array", "minItems": 2, "maxItems": 8, "uniqueItems": true, "items": { "type": "integer", "minimum": 1 } },
+            "packIds": { "type": "array", "minItems": 2, "maxItems": 8, "uniqueItems": true, "items": { "$ref": "#/$defs/packId" } },
+            "bindingSha256": { "$ref": "#/$defs/sha256" },
+            "providerBindingSha256": { "$ref": "#/$defs/sha256" },
+            "verificationCommandSha256": { "$ref": "#/$defs/sha256" },
+            "expectedRemoteAbsent": { "const": true }
+          }
+        }
+      }
+    },
+    "receipt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["phase", "summary"],
+      "properties": {
+        "phase": { "enum": ["ready", "prepared", "candidate_published", "awaiting_owner_readiness", "awaiting_provider_evidence", "accepted", "completed", "aborted", "stacked", "refused"] },
+        "summary": { "type": "string", "minLength": 1, "maxLength": 500 },
+        "candidatePullRequest": { "$ref": "#/$defs/pullRequest" },
+        "acceptance": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["status", "auditEventId"],
+          "properties": {
+            "status": { "enum": ["not_requested", "awaiting_owner_readiness", "awaiting_provider_evidence", "accepted"] },
+            "auditEventId": { "type": ["string", "null"], "maxLength": 120 }
+          }
+        },
+        "cleanup": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["worktreeRemoved", "localBranchPreserved"],
+          "properties": {
+            "worktreeRemoved": { "type": "boolean" },
+            "localBranchPreserved": { "type": "boolean" }
+          }
+        },
+        "pullRequests": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 8,
+          "items": { "$ref": "#/$defs/pullRequest" }
+        },
+        "error": { "$ref": "#/$defs/reportError" }
+      }
+    },
+    "response": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "operationId", "operation", "status"],
+      "properties": {
+        "schemaVersion": { "const": 1 },
+        "operationId": { "$ref": "#/$defs/operationId" },
+        "operation": { "enum": ["doctor", "prepare", "publish", "finalize", "status", "abort", "stack"] },
+        "status": { "enum": ["needs_action", "ready", "prepared", "observed", "candidate_published", "awaiting_owner_readiness", "awaiting_provider_evidence", "accepted", "completed", "aborted", "stacked", "refused"] },
+        "binding": { "$ref": "#/$defs/binding" },
+        "action": { "$ref": "#/$defs/action" },
+        "receipt": { "$ref": "#/$defs/receipt" }
+      }
+    }
+  },
+  "oneOf": [
+    { "$ref": "#/$defs/request" },
+    { "$ref": "#/$defs/response" }
+  ]
+}
