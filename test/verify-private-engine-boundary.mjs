@@ -870,7 +870,7 @@ async function verifyPackageBoundary() {
       [npm, 'pack', '--ignore-scripts', '--json', '--pack-destination', artifacts], root);
     const packed = JSON.parse(packedResult.stdout)[0];
     assert.equal(packed.name, '@wornpage/projects-pr');
-    assert.equal(packed.version, '3.0.0-beta.1');
+    assert.equal(packed.version, '3.0.0-beta.2');
     const packedPaths = packed.files.map(entry => entry.path.replaceAll('\\', '/'));
     const sourceTexts = new Map();
     for (const name of packedPaths.filter(name => name.endsWith('.mjs'))) {

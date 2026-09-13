@@ -1,6 +1,6 @@
 {
   "name": "@wornpage/projects-pr",
-  "version": "3.0.0-beta.1",
+  "version": "3.0.0-beta.2",
   "description": "A bounded local Git and GitHub runner for the private Projects PR Machine service.",
   "license": "AGPL-3.0-only",
   "type": "module",
@@ -31,11 +31,11 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/wornpage/projects-pr-machine.git"
+    "url": "git+https://github.com/wornpage/pr-runner.git"
   },
-  "homepage": "https://github.com/wornpage/projects-pr-machine#readme",
+  "homepage": "https://github.com/wornpage/pr-runner#readme",
   "bugs": {
-    "url": "https://github.com/wornpage/projects-pr-machine/issues"
+    "url": "https://github.com/wornpage/pr-runner/issues"
   },
   "publishConfig": {
     "access": "public",

@@ -1,5 +1,10 @@
 # Changelog
 
+## 3.0.0-beta.2 - 2026-09-13
+
+- Updates public repository, homepage and issue links for the separate runner distribution.
+- Preserves all eleven runtime files, the v1 protocol and existing license/provenance.
+
 ## 3.0.0-beta.1 - 2026-09-12
 
 - Replaces the public PR Machine decision engine with a bounded local runner for
