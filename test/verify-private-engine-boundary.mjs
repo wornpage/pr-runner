@@ -20,12 +20,18 @@ import {
 } from '../integrations/codex/projects-pack-delegation/skills/projects-pack-delegation/scripts/lib/protocol.mjs';
 import { createProjectsTransport, TransportError }
   from '../integrations/codex/projects-pack-delegation/skills/projects-pack-delegation/scripts/lib/transport.mjs';
+import { verifyInstalledAws } from './verify-installed-aws.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const skillRelative = 'integrations/codex/projects-pack-delegation/skills/projects-pack-delegation';
 const skillRoot = path.join(root, skillRelative);
 const runtimeManifestPath = path.join(skillRoot, 'scripts', 'runtime-manifest.json');
 const sha = bytes => createHash('sha256').update(bytes).digest('hex');
+const nativeAgentTemplates = Object.freeze([
+  'integrations/codex/projects-pack-delegation/agents/projects-pack-coordinator.toml',
+  'integrations/codex/projects-pack-delegation/agents/projects-pack-worker.toml',
+  'integrations/codex/projects-pack-delegation/agents/projects-pack-reviewer.toml'
+]);
 
 async function exec(executable, args, cwd, { env = process.env, expected = 0 } = {}) {
   const result = await new Promise((resolve, reject) => {
@@ -70,11 +76,14 @@ async function walk(directory, prefix = '') {
 function boundaryGuard(paths, readText) {
   const bannedPaths = [
     /projects-pr-core\.mjs$/u, /mutation-input\.mjs$/u, /verification-command\.mjs$/u,
-    /agents\/projects-pack-/u, /code-review-(?:snapshot|report)\.mjs$/u,
+    /code-review-(?:snapshot|report)\.mjs$/u,
     /hosted-rehearsal/u, /readiness-data\.mjs$/u, /github-review-evidence\.mjs$/u
   ];
   for (const name of paths) {
     if (bannedPaths.some(pattern => pattern.test(name))) throw new Error(`old public engine path: ${name}`);
+    if (/agents\/projects-pack-/u.test(name) && !nativeAgentTemplates.includes(name)) {
+      throw new Error(`old public engine path: ${name}`);
+    }
     if (name.endsWith('.mjs')) {
       const text = readText(name);
       for (const marker of ['authorizeAdminProjectsPr', 'finishProjectsPr', 'PROJECTS_PR_DELIVERY_POLICY',
@@ -513,8 +522,13 @@ async function verifyAuthorityMatrix(fixture, provider, context) {
   const beforeProviderLinks = provider.links.length;
   const beforeWorktrees = await git(['worktree', 'list', '--porcelain'], fixture.repository);
   const beforeBranches = await git(['for-each-ref', '--format=%(refname) %(objectname)', 'refs/heads/'], fixture.repository);
+  const baselineJournal = await fs.readFile(journalPath);
   for (const operation of operations) {
     for (const kind of ACTION_KINDS.filter(value => !expectedAuthority[operation].includes(value))) {
+      // Each refusal starts from the same valid prepared state. The client
+      // deliberately retains an unfinished operation after a refused response,
+      // so a different command cannot bypass its recovery lock.
+      await fs.writeFile(journalPath, baselineJournal);
       const before = JSON.parse(await fs.readFile(journalPath, 'utf8')).actions.length;
       const malicious = action(`wrapper:${operation}:${kind}`, kind, params[kind]);
       const transport = async request => ({ schemaVersion: 1, operationId: request.operationId,
@@ -528,6 +542,7 @@ async function verifyAuthorityMatrix(fixture, provider, context) {
       wrapperRefusals += 1;
     }
   }
+  await fs.writeFile(journalPath, baselineJournal);
   assert.equal(wrapperRefusals, directRefusals);
   assert.equal(mutationInvocationCount(), beforeMutationInvocations,
     'cross-verb wrapper matrix reached a Git mutation');
@@ -758,6 +773,8 @@ async function verifyRealLifecycle() {
       repositoryIdentity: 'example/projects', provider: missingHeadProvider, transport: missingHeadTransport });
     assert.equal(missingHead.status, 'refused');
 
+    const bottomJournalPath = path.join(fixture.repository, '.git', 'projects-pr-client-v1', `${bottomId}.json`);
+    const beforeBindingMismatch = await fs.readFile(bottomJournalPath);
     let workspaceStep = 0;
     const changedBinding = { ...bottomPrepared.binding, workspaceId: 'workspace-other' };
     const workspaceTransport = async request => {
@@ -773,6 +790,10 @@ async function verifyRealLifecycle() {
     await assert.rejects(runProjectsPr('status', statusInput, { runner: fixture.runner,
       repositoryIdentity: 'example/projects', provider, transport: workspaceTransport }),
     error => error.code === 'binding_mismatch');
+    const mismatchedJournal = JSON.parse(await fs.readFile(bottomJournalPath, 'utf8'));
+    assert.equal(mismatchedJournal.activeOperation?.terminal, false,
+      'changed binding leaves the operation locked for explicit reconciliation');
+    await fs.writeFile(bottomJournalPath, beforeBindingMismatch);
 
     const interruptProvider = { ...provider };
     delete interruptProvider.linkStack;
@@ -838,7 +859,7 @@ async function verifyPackageBoundary() {
   const manifest = JSON.parse(await fs.readFile(runtimeManifestPath, 'utf8'));
   assert.equal(manifest.kind, 'projects-pr-public-runtime-manifest');
   assert.equal(manifest.entrypoint, 'scripts/projects-pr.mjs');
-  assert.equal(manifest.files.length, 11);
+  assert.equal(manifest.files.length, 14);
   const runtimeText = new Map();
   for (const entry of manifest.files) {
     const bytes = await fs.readFile(path.join(skillRoot, entry.path));
@@ -849,6 +870,8 @@ async function verifyPackageBoundary() {
   boundaryGuard(manifest.files.map(entry => entry.path), name => runtimeText.get(name) ?? '');
   assert.throws(() => boundaryGuard(['scripts/lib/projects-pr-core.mjs'], () => ''),
     /old public engine path/u, 'boundary guard positive control must reject an old engine file');
+  assert.throws(() => boundaryGuard(['integrations/codex/projects-pack-delegation/agents/projects-pack-legacy.toml'], () => ''),
+    /old public engine path/u, 'boundary guard must reject unknown agent templates');
   assert.throws(() => boundaryGuard(['scripts/lib/fake.mjs'], () => 'export const x = finishProjectsPr;'),
     /old public engine marker/u, 'boundary guard positive control must reject old policy APIs');
   for (const [name, text] of runtimeText) {
@@ -870,8 +893,11 @@ async function verifyPackageBoundary() {
       [npm, 'pack', '--ignore-scripts', '--json', '--pack-destination', artifacts], root);
     const packed = JSON.parse(packedResult.stdout)[0];
     assert.equal(packed.name, '@wornpage/projects-pr');
-    assert.equal(packed.version, '3.0.0-beta.2');
+    assert.equal(packed.version, '3.0.0-beta.3');
     const packedPaths = packed.files.map(entry => entry.path.replaceAll('\\', '/'));
+    for (const path of nativeAgentTemplates) assert.ok(packedPaths.includes(path), `missing native agent template: ${path}`);
+    assert.ok(packedPaths.includes(`${skillRelative}/scripts/projects-aws-qualification.mjs`),
+      'missing local qualification sibling');
     const sourceTexts = new Map();
     for (const name of packedPaths.filter(name => name.endsWith('.mjs'))) {
       sourceTexts.set(name, await fs.readFile(path.join(root, name), 'utf8'));
@@ -889,6 +915,11 @@ async function verifyPackageBoundary() {
         `installed runtime hash mismatch: ${entry.path}`);
     }
     const installedPaths = await walk(installed);
+    const trustGuide = await fs.readFile(path.join(installed, 'docs', 'agent-trust.md'), 'utf8');
+    assert.match(trustGuide, /https:\/\/projectsdemo\.org\/mcp`/u,
+      'trust guide must use the exact accepted MCP endpoint');
+    assert.doesNotMatch(trustGuide, /https:\/\/projectsdemo\.org\/mcp\//u,
+      'trust guide must not instruct a rejected trailing-slash endpoint');
     const installedTexts = new Map();
     for (const name of installedPaths.filter(name => name.endsWith('.mjs'))) {
       installedTexts.set(name, await fs.readFile(path.join(installed, ...name.split('/')), 'utf8'));
@@ -900,6 +931,10 @@ async function verifyPackageBoundary() {
       assert.match(help.stdout, new RegExp(`\\b${verb}\\b`, 'u'));
     }
     assert.doesNotMatch(help.stdout, /authorize-admin|\bfinish\b/u);
+    const awsCli = path.join(installed, skillRelative, 'scripts', 'projects-aws-qualification.mjs');
+    const awsHelp = await exec(process.execPath, [awsCli, '--help'], consumer);
+    assert.match(awsHelp.stdout, /StartBuild is never retried/u);
+    const installedAws = await verifyInstalledAws(installed);
     const module = await import(`${pathToFileURL(path.join(installed, skillRelative,
       'scripts', 'lib', 'projects-pr.mjs')).href}?test=${Date.now()}`);
     for (const name of ['runProjectsPr', 'runProjectsPrDoctor', 'prepareProjectsPr', 'publishProjectsPr',
@@ -914,7 +949,8 @@ async function verifyPackageBoundary() {
     assert.equal(failure.status, 'failed');
     assert.equal(JSON.stringify(failure).includes('PROJECTS_MCP_TOKEN'), false);
     return { tarballSha256: sha(await fs.readFile(tarball)), packedFiles: packed.files.length,
-      runtimeFiles: manifest.files.length, installedFiles: installedPaths.length };
+      runtimeFiles: manifest.files.length, installedFiles: installedPaths.length,
+      installedAws };
   } finally {
     const resolved = path.resolve(temp);
     assert.ok(resolved.startsWith(path.resolve(os.tmpdir())) && path.basename(resolved).startsWith('projects-pr-package-'));

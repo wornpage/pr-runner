@@ -1,7 +1,7 @@
 {
   "name": "@wornpage/projects-pr",
-  "version": "3.0.0-beta.2",
-  "description": "A bounded local Git and GitHub runner for the private Projects PR Machine service.",
+  "version": "3.0.0-beta.3",
+  "description": "Bounded local PR and optional AWS qualification clients for the private Projects service.",
   "license": "AGPL-3.0-only",
   "type": "module",
   "bin": {

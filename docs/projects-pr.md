@@ -2,6 +2,10 @@
 
 The public CLI is a local actuator for one authenticated tool,
 `projects_pr_machine`. It does not contain a workflow engine.
+Its frozen protocol describes only the PR command and action names below.
+The separate `projects-aws-qualification.mjs` command shares the authenticated
+transport but has its own closed `aws_qualification_*` request and response
+validators. It does not extend the PR action schema or run Git commands.
 
 ## Local command mapping
 

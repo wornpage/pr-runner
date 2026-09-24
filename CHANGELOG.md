@@ -1,5 +1,16 @@
 # Changelog
 
+## 3.0.0-beta.3 - 2026-09-24
+
+- Adds the source-reviewed local AWS qualification sibling, pure policy contract,
+  and exact package/runtime manifest inventory.
+- Keeps single-use authorization and reservation state in the private Projects
+  Workspace. The local operator selects the AWS CLI and profile; uncertain
+  outcomes cannot automatically redispatch.
+- Packages three current Codex role templates and preserves the frozen PR wire
+  protocol and GitHub acceptance path.
+- Updates the public package and plugin identities for this review commit.
+
 ## 3.0.0-beta.2 - 2026-09-13
 
 - Updates public repository, homepage and issue links for the separate runner distribution.

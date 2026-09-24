@@ -17,7 +17,23 @@ The remaining public runtime contains only:
 - the frozen public v1 schema and fixtures;
 - independent action-specific validation;
 - local journal, lock, bounded-process, Git, and GitHub mechanics;
+- an opt-in local AWS qualification command and pure closed contract; and
+- three current Codex role templates for tracked assignments and independent
+  handoff review;
 - package and adversarial boundary verification.
+
+The 2026-09-24 public mirror candidate stages the exact portable runtime and
+Codex role assets from reviewed private source commit
+`8bf60c8042a4d947eca1c4e1a8c78f0c871ecede`. The private Workspace remains
+the authority for a single paid dispatch. No private service, credential,
+customer account setting, or hosted acceptance engine is shipped here.
+
+The release instruction and trust guide were subsequently clarified in the
+private pre-pin source commit `88d1b4c53d9fec5e162d5d933f8d05855dd64fd9`.
+All 19 portable installer assets and `docs/agent-trust.md` in this public
+mirror match that pre-pin commit byte-for-byte. The private installer must pin
+the actual reviewed public release commit after publication; this provenance
+note is not an installation or a hosted qualification receipt.
 
 The private Projects service and installer are developed separately. The
 checked runtime manifest lets private CI pin exact public bytes without

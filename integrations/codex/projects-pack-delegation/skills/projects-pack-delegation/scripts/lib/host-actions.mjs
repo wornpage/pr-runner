@@ -29,15 +29,27 @@ function shellVersionForReport(platform, result) {
   return version || null;
 }
 
-async function run(runner, executable, args, cwd, code = 'host_action_failed') {
-  const result = await runner({ executable, args, cwd, shell: false, timeoutMs: 30_000 });
+function exactUpToDatePushDryRun(result, baseSha, baseBranch, expectedUrl) {
+  if (result?.exitCode !== 0 || typeof result.stdout !== 'string'
+      || !result.stdout.endsWith('\n') || /[\u0000-\u0008\u000b-\u001f\u007f]/u.test(result.stdout)
+      || !repositoryFromRemote(expectedUrl)) return false;
+  const lines = result.stdout.slice(0, -1).split('\n');
+  if (lines.length !== 1 && (lines.length !== 3
+      || lines[0] !== `To ${expectedUrl}` || lines[2] !== 'Done')) return false;
+  const fields = lines[lines.length === 1 ? 0 : 1].split('\t');
+  return fields.length === 3 && fields[0] === '=' && fields[2].length > 0
+    && fields[1] === `${baseSha}:refs/heads/${baseBranch}`;
+}
+
+async function run(runner, executable, args, cwd, code = 'host_action_failed', credentialScope = 'none', credentialUrl) {
+  const result = await runner({ executable, args, cwd, shell: false, timeoutMs: 30_000, credentialScope, credentialUrl });
   if (result?.processUncertain) fail('subprocess_uncertain', { uncertain: true });
   if (result?.exitCode !== 0) fail(code);
   return result.stdout;
 }
 
-async function optional(runner, executable, args, cwd) {
-  const result = await runner({ executable, args, cwd, shell: false, timeoutMs: 30_000 });
+async function optional(runner, executable, args, cwd, credentialScope = 'none', credentialUrl) {
+  const result = await runner({ executable, args, cwd, shell: false, timeoutMs: 30_000, credentialScope, credentialUrl });
   if (result?.processUncertain) fail('subprocess_uncertain', { uncertain: true });
   return result;
 }
@@ -141,7 +153,8 @@ async function localRef(state, runner, branch) {
 }
 
 async function remoteRef(state, runner, remote, branch) {
-  const result = await optional(runner, 'git', ['ls-remote', '--heads', remote, `refs/heads/${branch}`], state.repositoryRoot);
+  const result = await optional(runner, 'git', ['ls-remote', '--heads', remote, `refs/heads/${branch}`], state.repositoryRoot,
+    'github-git', remote);
   if (result.exitCode !== 0) return { reachable: false, sha: null };
   return { reachable: true, sha: oid(result.stdout) };
 }
@@ -170,7 +183,8 @@ async function inspectWorktree(state, runner, branch, target = state.worktreePat
 async function defaultListPullRequests(state, runner, branch) {
   const result = await optional(runner, 'gh', ['pr', 'list', '--repo', state.repository, '--head', branch,
     '--state', 'all', '--limit', '3', '--json',
-    'number,url,state,isDraft,baseRefName,baseRefOid,headRefName,headRefOid,headRepository'], state.repositoryRoot);
+    'number,url,state,isDraft,baseRefName,baseRefOid,headRefName,headRefOid,headRepository'], state.repositoryRoot,
+  'github-api');
   if (result.exitCode !== 0) fail('provider_unavailable');
   let values;
   try { values = JSON.parse(result.stdout); } catch { fail('provider_response_invalid'); }
@@ -253,7 +267,7 @@ async function observeRepository(state, params, runner, provider) {
 }
 
 async function observeHost(state, params, runner, provider) {
-  await assertRepositoryIdentity(state, { repository: params.repository, remote: state.remote }, runner);
+  const identity = await assertRepositoryIdentity(state, { repository: params.repository, remote: state.remote }, runner);
   const git = await optional(runner, 'git', ['--version'], state.repositoryRoot);
   const shellKind = process.platform === 'win32' ? 'pwsh' : 'sh';
   const shell = process.platform === 'win32'
@@ -263,13 +277,39 @@ async function observeHost(state, params, runner, provider) {
   if (provider?.observeHost) ({ github, stack } = await provider.observeHost({ repository: state.repository }));
   else {
     const version = await optional(runner, 'gh', ['--version'], state.repositoryRoot);
-    const auth = await optional(runner, 'gh', ['auth', 'status', '--hostname', 'github.com'], state.repositoryRoot);
-    const view = await optional(runner, 'gh', ['repo', 'view', state.repository, '--json', 'nameWithOwner,viewerPermission'], state.repositoryRoot);
+    const installation = runner.githubPublisherMode === 'github_app_installation_token'
+      ? await optional(runner, 'gh', ['api', '--method', 'GET', 'installation/repositories?per_page=1'],
+        state.repositoryRoot, 'github-api') : null;
+    const view = await optional(runner, 'gh', ['api', '--method', 'GET', `repos/${state.repository}`],
+      state.repositoryRoot, 'github-api');
     let viewed = null;
     try { if (view.exitCode === 0) viewed = JSON.parse(view.stdout); } catch { /* unavailable */ }
+    let installedRepository = null;
+    try {
+      if (installation?.exitCode === 0) {
+        const installed = JSON.parse(installation.stdout);
+        if (installed?.total_count === 1 && Array.isArray(installed.repositories) && installed.repositories.length === 1
+            && Number.isSafeInteger(installed.repositories[0]?.id) && installed.repositories[0].id > 0
+            && installed.repositories[0].full_name?.toLowerCase() === state.repository.toLowerCase()) {
+          installedRepository = installed.repositories[0];
+        }
+      }
+    } catch { /* unavailable */ }
+    const repositoryVerified = view.exitCode === 0 && Number.isSafeInteger(viewed?.id) && viewed.id > 0
+      && viewed.full_name?.toLowerCase() === state.repository.toLowerCase();
+    const installationVerified = installation === null || (installedRepository?.id === viewed?.id
+      && installedRepository.full_name.toLowerCase() === viewed.full_name.toLowerCase());
+    const appPublisher = runner.githubPublisherMode === 'github_app_installation_token';
+    // App installation tokens expose false repository user-permission flags even
+    // with contents:write. A dry-run push selects receive-pack but sends no update.
+    const writeProbe = appPublisher && installationVerified && repositoryVerified
+      ? await optional(runner, 'git', ['push', '--dry-run', '--porcelain', '--no-verify', identity.pushUrl,
+        `${state.baseSha}:refs/heads/${state.baseBranch}`], state.repositoryRoot, 'github-git', identity.pushUrl)
+      : null;
+    const appPushPermission = exactUpToDatePushDryRun(writeProbe, state.baseSha, state.baseBranch, identity.pushUrl);
     github = { version: version.exitCode === 0 ? version.stdout.split(/\r?\n/u)[0].slice(0, 80) : null,
-      authenticated: auth.exitCode === 0, repository: viewed?.nameWithOwner ?? null,
-      pushPermission: ['ADMIN', 'MAINTAIN', 'WRITE'].includes(viewed?.viewerPermission) };
+      authenticated: installationVerified && repositoryVerified, repository: viewed?.full_name ?? null,
+      pushPermission: appPublisher ? appPushPermission : viewed?.permissions?.push === true };
     const extensions = await optional(runner, 'gh', ['extension', 'list'], state.repositoryRoot);
     const matches = extensions.exitCode === 0 ? extensions.stdout.split(/\r?\n/gu)
       .filter(line => /(?:^|\s)github\/gh-stack(?:\s|$)/u.test(line)) : [];
@@ -348,7 +388,7 @@ async function pushBranch(state, params, runner) {
   if (!before.sha) {
     try {
       await run(runner, 'git', ['push', `--force-with-lease=refs/heads/${params.branch}:`, identity.pushUrl,
-        `${params.headSha}:refs/heads/${params.branch}`], state.worktreePath, 'push_failed');
+        `${params.headSha}:refs/heads/${params.branch}`], state.worktreePath, 'push_failed', 'github-git', identity.pushUrl);
     } catch (error) {
       if (error instanceof ActionExecutionError && error.uncertain) throw error;
       const raced = await remoteRef(state, runner, identity.pushUrl, params.branch);
@@ -370,14 +410,14 @@ async function createPullRequest(state, params, runner, provider) {
   if (pulls.length > 1 || (pulls.length === 1 && (pulls[0].headSha !== params.headSha
       || pulls[0].baseRef !== params.baseBranch || !pulls[0].draft))) fail('pull_request_mismatch');
   if (pulls.length === 0) {
-    const body = `Created from an accepted Projects worker handoff. Owner review is still required.\n\nProvider evidence run: \`projects-acceptance:${params.providerBindingSha256}\`\nPublic publication binding: \`${params.bindingSha256}\``;
+    const body = `Created from a reported Projects worker handoff. Acceptance is pending trusted verification and independent owner review.\n\nRequired verification run name: \`projects-acceptance:${params.providerBindingSha256}\`\nPublic publication binding: \`${params.bindingSha256}\``;
     try {
       if (provider?.createPullRequest) await provider.createPullRequest({ repository: state.repository,
         baseBranch: params.baseBranch, branch: params.branch, headSha: params.headSha, title: params.title,
         draft: true, body });
       else await run(runner, 'gh', ['pr', 'create', '--repo', state.repository, '--base', params.baseBranch,
         '--head', params.branch, '--title', params.title, '--body', body, '--draft'],
-      state.repositoryRoot, 'pull_request_create_failed');
+      state.repositoryRoot, 'pull_request_create_failed', 'github-api');
       pulls = await listPullRequests(state, runner, provider, params.branch);
     } catch (error) {
       if (error instanceof ActionExecutionError && error.uncertain) throw error;
@@ -478,7 +518,7 @@ async function stackMembership(state, params, runner, provider) {
   for (const number of params.pullRequests) {
     const output = await run(runner, 'gh', ['api', '--method', 'GET',
       `repos/${state.repository}/stacks`, '-f', `pull_request=${number}`, '-f', 'per_page=2', '-f', 'page=1'],
-    state.repositoryRoot, 'stack_observation_failed');
+    state.repositoryRoot, 'stack_observation_failed', 'github-api');
     let values;
     try { values = JSON.parse(output); } catch { fail('stack_observation_failed'); }
     if (!Array.isArray(values) || values.length > 1) fail('stack_membership_ambiguous');
@@ -512,7 +552,7 @@ async function linkStack(state, params, runner, provider, journals, recovery) {
     if (provider?.linkStack) await provider.linkStack({ repository: state.repository, baseBranch: params.baseBranch,
       remote: params.remote, pullRequestUrls: urls });
     else await run(runner, 'gh', ['stack', 'link', '--base', params.baseBranch, '--remote', params.remote,
-      ...urls], state.repositoryRoot, 'stack_link_failed');
+      ...urls], state.repositoryRoot, 'stack_link_failed', 'github-api');
   } catch (error) {
     if (error instanceof ActionExecutionError && error.uncertain) throw error;
     fail('stack_effect_uncertain', { uncertain: true });
