@@ -5,11 +5,14 @@ import path from 'node:path';
 export const JOURNAL_SCHEMA_VERSION = 1;
 export const JOURNAL_DIRECTORY = 'projects-pr-client-v1';
 export const JOURNAL_MAX_BYTES = 512 * 1024;
+export const JOURNAL_BINDING_HISTORY_LIMIT = 8;
 const PACK_ID = /^[A-Za-z0-9._:-]{1,120}$/u;
 const SHA256 = /^[a-f0-9]{64}$/u;
 const COMMIT = /^[a-f0-9]{40}$/u;
 const REPOSITORY = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/u;
 const REMOTE = /^[A-Za-z0-9._-]{1,80}$/u;
+const OPERATION_ID = /^[A-Za-z0-9._:+/-]{1,160}$/u;
+const OPERATIONS = new Set(['prepare', 'publish', 'finalize', 'status', 'abort', 'stack']);
 
 export class JournalError extends Error {
   constructor(code) {
@@ -22,6 +25,47 @@ export class JournalError extends Error {
 const fail = code => { throw new JournalError(code); };
 const samePath = (a, b) => process.platform === 'win32'
   ? a.toLowerCase() === b.toLowerCase() : a === b;
+const object = value => value && typeof value === 'object' && !Array.isArray(value);
+const text = (value, max) => typeof value === 'string' && value.length >= 1 && value.length <= max
+  && value.isWellFormed() && !/[\u0000-\u001f\u007f]/u.test(value);
+const iso = value => typeof value === 'string' && Number.isFinite(Date.parse(value))
+  && new Date(value).toISOString() === value;
+
+function validBinding(binding) {
+  return object(binding)
+    && Object.keys(binding).sort().join(',') === 'attempt,base,head,packId,repository,revision,verificationCommandSha256,workspaceId'
+    && text(binding.workspaceId, 120)
+    && PACK_ID.test(binding.packId ?? '') && Number.isSafeInteger(binding.attempt) && binding.attempt >= 1 && binding.attempt <= 100
+    && Number.isSafeInteger(binding.revision) && binding.revision >= 1 && binding.revision <= 100
+    && REPOSITORY.test(binding.repository ?? '') && binding.repository.length <= 200 && COMMIT.test(binding.base ?? '')
+    && COMMIT.test(binding.head ?? '') && SHA256.test(binding.verificationCommandSha256 ?? '');
+}
+
+function validOperation(operation) {
+  return object(operation) && Object.keys(operation).sort().join(',') === 'command,inputDigest,operationId,report,terminal'
+    && OPERATIONS.has(operation.command) && SHA256.test(operation.inputDigest ?? '')
+    && OPERATION_ID.test(operation.operationId ?? '') && operation.terminal === true && operation.report === null;
+}
+
+function validBindingHistory(history, state) {
+  if (history === undefined) return true;
+  if (!Array.isArray(history) || history.length > JOURNAL_BINDING_HISTORY_LIMIT) return false;
+  if (history.length === 0) return state.binding === null || validBinding(state.binding);
+  if (!validBinding(state.binding)) return false;
+  const operationIds = new Set(); let prior = null;
+  const valid = history.every(entry => {
+    if (!object(entry) || Object.keys(entry).sort().join(',') !== 'activeOperation,assignmentHead,binding,replacedAt'
+        || !validBinding(entry.binding) || !COMMIT.test(entry.assignmentHead ?? '')
+        || entry.assignmentHead !== entry.binding.head || !validOperation(entry.activeOperation) || !iso(entry.replacedAt)
+        || entry.binding.workspaceId !== state.binding.workspaceId || entry.binding.packId !== state.packId
+        || entry.binding.repository.toLowerCase() !== state.repository.toLowerCase()
+        || entry.binding.verificationCommandSha256 !== state.verificationCommandSha256
+        || operationIds.has(entry.activeOperation.operationId)
+        || prior && (entry.binding.attempt !== prior.attempt + 1 || entry.binding.revision !== prior.revision + 1)) return false;
+    operationIds.add(entry.activeOperation.operationId); prior = entry.binding; return true;
+  });
+  return valid && (!prior || state.binding.attempt === prior.attempt + 1 && state.binding.revision === prior.revision + 1);
+}
 
 async function checkedGitPath(runner, repositoryRoot, args) {
   const result = await runner({ executable: 'git', args, cwd: repositoryRoot, shell: false, timeoutMs: 10_000 });
@@ -95,7 +139,10 @@ export async function readJournal(location, packId, { required = true, fsApi = f
       || typeof state.baseBranch !== 'string' || !COMMIT.test(state.baseSha ?? '')
       || !COMMIT.test(state.assignmentHead ?? '') || !SHA256.test(state.verificationCommandSha256 ?? '')
       || !SHA256.test(state.gitConfigSha256 ?? '') || typeof state.verificationCommand !== 'string'
-      || !Array.isArray(state.actions) || state.actions.length > 64) fail('journal_unavailable');
+      || !Array.isArray(state.actions) || state.actions.length > 64
+      || !(state.binding === null || validBinding(state.binding))
+      || state.binding && (state.binding.base !== state.baseSha || state.binding.head !== state.assignmentHead)
+      || !validBindingHistory(state.bindingHistory, state)) fail('journal_unavailable');
   if (state.worktreePath !== null) {
     const base = path.join(path.dirname(location.root), '.projects-pr-worktrees');
     const relative = path.relative(base, state.worktreePath);
@@ -109,7 +156,10 @@ export async function writeJournal(location, state, { fsApi = fs } = {}) {
   if (!location.exists || !state || typeof state !== 'object' || Array.isArray(state)
       || state.schemaVersion !== JOURNAL_SCHEMA_VERSION || state.kind !== 'projects-pr-local-runner-journal'
       || !PACK_ID.test(state.packId) || state.repositoryRoot !== location.root
-      || !Array.isArray(state.actions) || state.actions.length > 64) fail('journal_write_failed');
+      || !Array.isArray(state.actions) || state.actions.length > 64
+      || !(state.binding === null || validBinding(state.binding))
+      || state.binding && (state.binding.base !== state.baseSha || state.binding.head !== state.assignmentHead)
+      || !validBindingHistory(state.bindingHistory, state)) fail('journal_write_failed');
   const target = journalPath(location, state.packId);
   const temporary = path.join(location.directory, `.${state.packId}.${randomUUID()}.tmp`);
   const bytes = Buffer.from(`${JSON.stringify(state, null, 2)}\n`);
@@ -148,6 +198,7 @@ export function newJournal({ packId, repositoryRoot, repository, baseBranch, rem
     createdBranch: null,
     activeOperation: null,
     actions: [],
+    bindingHistory: [],
     updatedAt: new Date().toISOString()
   };
 }

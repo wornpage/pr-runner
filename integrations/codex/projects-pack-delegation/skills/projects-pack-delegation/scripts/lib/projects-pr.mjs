@@ -4,7 +4,9 @@ import path from 'node:path';
 import { ActionAuthorityError, assertActionAuthority } from './action-authority.mjs';
 import { createProcessSession, defaultProjectsPrRunner } from './bounded-process.mjs';
 import { ActionExecutionError, executeAction, repositoryFromRemote } from './host-actions.mjs';
-import { discoverJournal, newJournal, readJournal, writeJournal } from './journal.mjs';
+import {
+  JOURNAL_BINDING_HISTORY_LIMIT, discoverJournal, newJournal, readJournal, writeJournal
+} from './journal.mjs';
 import {
   ProtocolError, digestJson, makeFailureReport, makeSuccessReport, sha256,
   validateAction, validateBinding, validateRequest, validateResponse
@@ -104,7 +106,8 @@ function validateInput(command, input) {
   if (command !== 'doctor' && command !== 'stack' && !PACK_ID.test(input.packId ?? '')) fail('invalid_input', command);
   if (command === 'stack' && (!Array.isArray(input.packIds) || input.packIds.length < 2 || input.packIds.length > 8
       || new Set(input.packIds).size !== input.packIds.length || input.packIds.some(id => !PACK_ID.test(id)))) fail('invalid_input', command);
-  if (command === 'prepare' && (!safeText(input.title, 200) || !safeText(input.verificationCommand, 4096))) fail('invalid_input', command);
+  if (command === 'prepare' && (!safeText(input.title, 200) || !safeText(input.verificationCommand, 4096)
+      || ['head', 'headSha', 'assignmentHead'].some(key => Object.hasOwn(input, key)))) fail('invalid_input', command);
   if (command === 'publish' && (!COMMIT.test(input.headSha ?? '') || !SHA256.test(input.handoffSha256 ?? ''))) fail('invalid_input', command);
   if (command === 'finalize' && input.githubEvidence) {
     const evidence = input.githubEvidence;
@@ -114,23 +117,73 @@ function validateInput(command, input) {
   }
 }
 
-function assertBinding(state, binding) {
-  validateBinding(binding);
-  if (binding.packId !== state.packId || binding.repository.toLowerCase() !== state.repository.toLowerCase()
-      || binding.base !== state.baseSha || binding.head !== state.assignmentHead
-      || binding.verificationCommandSha256 !== state.verificationCommandSha256) fail('binding_mismatch');
-  if (state.binding) {
-    if (digestJson(state.binding) !== digestJson(binding)) fail('binding_mismatch');
-  } else state.binding = { ...binding };
+function reworkSource(state) {
+  if (!state.binding || !state.worktreePath || !state.createdBranch || state.candidateHead != null
+      || state.providerBindingSha256 != null) return null;
+  const recovering = state.activeOperation?.command === 'prepare' && state.activeOperation.terminal === false
+    && state.activeOperation.priorOperation?.terminal === true;
+  if (state.actions.some(action => ['intent', 'executing', 'uncertain'].includes(action.status)
+      && (!recovering || action.operationId !== state.activeOperation.operationId))) return null;
+  const operation = recovering ? state.activeOperation.priorOperation
+    : state.activeOperation?.terminal === true ? state.activeOperation.priorOperation ?? state.activeOperation : null;
+  if (!operation) return null;
+  return { binding: structuredClone(state.binding), baseSha: state.baseSha, assignmentHead: state.assignmentHead,
+    activeOperation: structuredClone(operation) };
 }
 
-function assertActionContext(state, action, input) {
+function assertBinding(state, binding, command, source, operation, observedBaseSha) {
+  validateBinding(binding);
+  if (binding.packId !== state.packId || binding.repository.toLowerCase() !== state.repository.toLowerCase()
+      || binding.base !== observedBaseSha
+      || binding.verificationCommandSha256 !== state.verificationCommandSha256) fail('binding_mismatch');
+  if (!state.binding) {
+    if (binding.head !== state.assignmentHead) fail('binding_mismatch');
+    state.binding = { ...binding };
+    return false;
+  }
+  if (digestJson(state.binding) === digestJson(binding)) {
+    if (binding.head !== state.assignmentHead || operation.pendingBinding) fail('binding_mismatch');
+    return 'current';
+  }
+  validateBinding(state.binding);
+  const baseChanged = binding.base !== state.binding.base;
+  if (command !== 'prepare' || !source || digestJson(state.binding) !== digestJson(source.binding)
+      || state.baseSha !== source.baseSha || state.assignmentHead !== source.assignmentHead
+      || binding.workspaceId !== state.binding.workspaceId
+      || binding.packId !== state.binding.packId || binding.repository.toLowerCase() !== state.binding.repository.toLowerCase()
+      || binding.verificationCommandSha256 !== state.binding.verificationCommandSha256
+      || binding.attempt !== state.binding.attempt + 1 || binding.revision !== state.binding.revision + 1
+      || !COMMIT.test(binding.head)
+      || (baseChanged ? binding.head !== state.assignmentHead : binding.head === state.assignmentHead)) fail('binding_mismatch');
+  const history = state.bindingHistory ?? [];
+  if (!Array.isArray(history) || history.length >= JOURNAL_BINDING_HISTORY_LIMIT) fail('journal_capacity_exceeded');
+  if (operation.pendingBinding && digestJson(operation.pendingBinding) !== digestJson(binding)) fail('binding_mismatch');
+  operation.pendingBinding = { ...binding };
+  return 'pending';
+}
+
+function commitPendingBinding(state, source, operation) {
+  const binding = operation.pendingBinding;
+  if (!binding || !source || digestJson(state.binding) !== digestJson(source.binding)
+      || state.baseSha !== source.baseSha || state.assignmentHead !== source.assignmentHead) fail('binding_mismatch');
+  const history = state.bindingHistory ?? [];
+  if (!Array.isArray(history) || history.length >= JOURNAL_BINDING_HISTORY_LIMIT) fail('journal_capacity_exceeded');
+  state.bindingHistory = [...history, { binding: structuredClone(state.binding), assignmentHead: state.assignmentHead,
+    activeOperation: source.activeOperation, replacedAt: new Date().toISOString() }];
+  state.binding = { ...binding };
+  state.baseSha = binding.base;
+  state.assignmentHead = binding.head;
+  delete operation.pendingBinding;
+  delete operation.priorOperation;
+}
+
+function assertActionContext(state, action, input, effectiveBinding = state.binding) {
   validateAction(action);
   const params = action.params;
   if (params.repository !== state.repository) fail('action_context_mismatch');
   if ('baseBranch' in params && params.baseBranch !== state.baseBranch) fail('action_context_mismatch');
   if ('remote' in params && params.remote !== state.remote) fail('action_context_mismatch');
-  if ('baseSha' in params && params.baseSha !== state.baseSha) fail('action_context_mismatch');
+  if ('baseSha' in params && params.baseSha !== effectiveBinding?.base) fail('action_context_mismatch');
   if ('verificationCommandSha256' in params && params.verificationCommandSha256 !== state.verificationCommandSha256) {
     fail('action_context_mismatch');
   }
@@ -142,6 +195,11 @@ function assertActionContext(state, action, input) {
         || state.targetObservation.absent !== true) {
       fail('target_not_observed');
     }
+  }
+  if (action.kind === 'observe_repository' && effectiveBinding !== state.binding
+      && state.createdBranch && Object.hasOwn(params, 'branch')) {
+    if (params.branch !== state.createdBranch || params.headSha !== effectiveBinding?.head
+        || path.basename(state.worktreePath ?? '') !== params.worktreeName) fail('action_context_mismatch');
   }
   if (['observe_candidate', 'push_branch', 'create_pull_request', 'remove_worktree', 'remove_local_branch'].includes(action.kind)) {
     if (state.createdBranch && params.branch !== state.createdBranch) fail('action_context_mismatch');
@@ -169,14 +227,17 @@ function operationIdentity(command, input, state) {
   return digestJson(material);
 }
 
-function beginOperation(state, command, input) {
+function beginOperation(state, command, input, source = null) {
   const inputDigest = operationIdentity(command, input, state);
   if (state.activeOperation && state.activeOperation.command === command
       && state.activeOperation.inputDigest === inputDigest && state.activeOperation.terminal !== true) {
     return state.activeOperation;
   }
+  if (state.activeOperation?.terminal === false) fail('operation_in_progress');
+  const priorOperation = command === 'prepare' && source ? source.activeOperation
+    : command === 'prepare' && state.activeOperation?.terminal === true ? structuredClone(state.activeOperation) : null;
   state.activeOperation = { command, inputDigest, operationId: `${command}:${input.packId ?? 'repository'}:${randomUUID()}`,
-    terminal: false, report: null };
+    terminal: false, report: null, ...(priorOperation ? { priorOperation } : {}) };
   return state.activeOperation;
 }
 
@@ -204,17 +265,24 @@ function publicReceipt(command, response, state) {
   return result;
 }
 
-async function runLoop(command, input, state, location, journals, session, transport, dependencies) {
-  const operation = beginOperation(state, command, input);
+async function runLoop(command, input, state, location, journals, session, transport, dependencies, observedBaseSha = state.baseSha) {
+  const source = command === 'prepare' ? reworkSource(state) : null;
+  const operation = beginOperation(state, command, input, source);
   if (location) await writeJournal(location, state);
   for (let step = 0; step < 24; step += 1) {
     const request = commandRequest(command, input, operation.operationId, state, operation.report);
     const raw = await transport(request);
     const response = validateResponse(raw, request);
-    if (response.binding) assertBinding(state, response.binding);
+    const bindingState = response.binding
+      ? assertBinding(state, response.binding, command, source, operation, observedBaseSha) : null;
     if (response.status !== 'needs_action') {
+      if (response.status === 'prepared' && operation.pendingBinding) {
+        if (bindingState !== 'pending') fail('binding_mismatch');
+        commitPendingBinding(state, source, operation);
+      }
       operation.terminal = true;
       operation.report = null;
+      if (!operation.pendingBinding && response.status !== 'refused' && operation.priorOperation) delete operation.priorOperation;
       state.updatedAt = new Date().toISOString();
       if (location) await writeJournal(location, state);
       return publicReceipt(command, response, state);
@@ -222,7 +290,7 @@ async function runLoop(command, input, state, location, journals, session, trans
     if (!state.binding && command !== 'doctor') fail('binding_missing');
     const action = validateAction(response.action);
     assertActionAuthority(command, action.kind);
-    assertActionContext(state, action, input);
+    assertActionContext(state, action, input, operation.pendingBinding ?? state.binding);
     const actionDigest = digestJson(action);
     let record = state.actions.find(item => item.actionId === action.actionId);
     if (record && (record.actionDigest !== actionDigest || record.operationId !== operation.operationId)) {
@@ -313,8 +381,9 @@ export async function runProjectsPr(command, input = {}, dependencies = {}) {
           baseSha: discovered.baseSha, assignmentHead: discovered.baseSha,
           verificationCommand: input.verificationCommand, verificationCommandSha256: commandHash,
           gitConfigSha256: discovered.gitConfigSha256 });
-        if (existing && (existing.repository !== discovered.repository || existing.baseSha !== discovered.baseSha
-            || existing.verificationCommandSha256 !== commandHash || existing.verificationCommand !== input.verificationCommand)) {
+        if (existing && (existing.repository !== discovered.repository
+            || existing.verificationCommandSha256 !== commandHash || existing.verificationCommand !== input.verificationCommand
+            || (existing.baseSha !== discovered.baseSha && !reworkSource(existing)))) {
           fail('assignment_changed');
         }
       } else if (command === 'stack') {
@@ -323,7 +392,8 @@ export async function runProjectsPr(command, input = {}, dependencies = {}) {
       } else state = await readJournal(location, input.packId);
       if (state.repository !== discovered.repository || state.repositoryRoot !== discovered.root
           || (command !== 'stack' && state.baseBranch !== discovered.baseBranch) || state.remote !== discovered.remote
-          || state.baseSha !== discovered.baseSha || state.gitConfigSha256 !== discovered.gitConfigSha256) fail('repository_changed');
+          || (state.baseSha !== discovered.baseSha && (command !== 'prepare' || !reworkSource(state)))
+          || state.gitConfigSha256 !== discovered.gitConfigSha256) fail('repository_changed');
       if (command === 'publish') {
         if (state.candidateHead && state.candidateHead !== input.headSha) fail('candidate_changed');
         if (!state.worktreePath) fail('candidate_unavailable');
@@ -332,7 +402,7 @@ export async function runProjectsPr(command, input = {}, dependencies = {}) {
         if (candidate.trim() !== input.headSha) fail('candidate_changed');
         state.candidateHead = input.headSha;
       }
-      return runLoop(command, input, state, location, journals, session, transport, dependencies);
+      return runLoop(command, input, state, location, journals, session, transport, dependencies, discovered.baseSha);
     }, { runner: session.runner, canRelease: session.canRelease });
   } catch (error) {
     if (error instanceof LifecycleLockError) throw new ProjectsPrClientError(error.code, command);

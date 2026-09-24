@@ -8,7 +8,10 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const skill = 'integrations/codex/projects-pack-delegation/skills/projects-pack-delegation';
 const files = [
   ['scripts/projects-pr.mjs', 'projects-pr-cli'],
+  ['scripts/projects-aws-qualification.mjs', 'projects-aws-qualification-cli'],
   ['scripts/lib/action-authority.mjs', 'local-command-action-authority'],
+  ['scripts/lib/aws-qualification-contract.mjs', 'pure-closed-aws-qualification-contract'],
+  ['scripts/lib/aws-qualification-runner.mjs', 'local-single-dispatch-operator'],
   ['scripts/lib/bounded-process.mjs', 'bounded-process'],
   ['scripts/lib/host-actions.mjs', 'closed-host-actions'],
   ['scripts/lib/journal.mjs', 'durable-local-journal'],
@@ -30,6 +33,11 @@ const manifest = { schemaVersion: 1, kind: 'projects-pr-public-runtime-manifest'
   entrypoint: 'scripts/projects-pr.mjs', files: entries,
   dependencies: {
     'scripts/projects-pr.mjs': ['scripts/lib/projects-pr.mjs'],
+    'scripts/projects-aws-qualification.mjs': ['scripts/lib/aws-qualification-runner.mjs'],
+    'scripts/lib/aws-qualification-runner.mjs': [
+      'scripts/lib/aws-qualification-contract.mjs', 'scripts/lib/transport.mjs'
+    ],
+    'scripts/lib/aws-qualification-contract.mjs': [],
     'scripts/lib/projects-pr.mjs': [
       'scripts/lib/action-authority.mjs', 'scripts/lib/bounded-process.mjs', 'scripts/lib/host-actions.mjs',
       'scripts/lib/journal.mjs', 'scripts/lib/protocol.mjs', 'scripts/lib/repository-lock.mjs',

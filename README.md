@@ -33,6 +33,14 @@ that command without runner credentials and supplies its evidence to Projects.
 The runner never marks a draft ready, enables auto-merge, merges, deploys, or
 accepts server-selected paths, executables, shell, arguments, or credentials.
 
+The package also contains a separate, opt-in local CodeBuild qualification
+command. It uses the same authenticated Projects transport but does not use the
+PR runner's Git/worktree execution path. Projects durably reserves one approved
+attempt; the operator selects a local AWS profile and absolute AWS CLI path.
+An uncertain response consumes the reservation and cannot trigger another
+StartBuild. The private server holds no AWS credential. The current production
+acceptance consumer remains the GitHub path.
+
 ## Requirements
 
 - Node.js 22 or newer
@@ -59,6 +67,12 @@ projects-pr abort --pack-id ID --repo .
 projects-pr stack --pack-id BOTTOM --pack-id TOP --base main --repo . --remote origin
 ```
 
+The optional qualification command lives at
+`integrations/codex/projects-pack-delegation/skills/projects-pack-delegation/scripts/projects-aws-qualification.mjs`.
+Run it through a reviewed installation of that absolute file. `--help` shows
+its `start` and read-only `status` forms. A deployment-owned policy and a
+separate owner-approved AWS pilot are required before `start` can dispatch.
+
 After an owner independently marks the exact draft head ready, `finalize` may
 include all five provider references: `--github-pr`, `--github-run`,
 `--github-attempt`, `--github-artifact`, and `--github-review`. The service
@@ -83,6 +97,9 @@ inspection.
 The installable runtime is listed with SHA-256 hashes and dependency inventory
 in `scripts/runtime-manifest.json` beside the skill entrypoint. Generate or
 verify it with `npm run runtime:manifest` or `npm run runtime:manifest -- --check`.
+The new sibling, its pure contract, and its local runner are included in that
+inventory. The three current Codex role templates are included as installable
+assets; they do not add a local decision engine.
 
 Run the complete boundary gate with:
 
